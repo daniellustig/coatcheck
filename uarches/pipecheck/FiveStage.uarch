@@ -1,0 +1,183 @@
+% Legend:
+% "/\" = AND
+% "\/" = OR
+% "~"  = NOT
+% "=>" = IMPLIES
+% "%"  = COMMENT
+%
+% Graph node = (instruction, (pipeline, stage number))
+% Graph edge = (node, node, label)
+%
+% "c" is predefined to be the core ID
+
+StageName 0 "Fetch".
+StageName 1 "Decode".
+StageName 2 "Execute".
+StageName 3 "MemoryStage".
+StageName 4 "Writeback".
+StageName 5 "StoreBuffer".
+StageName 6 "MemoryHierarchy".
+
+DefineMacro "STBFwd":
+  exists microop "w",
+    IsAnyWrite w /\ SameVirtualAddress w i /\ SameCore w i /\ SameData w i /\
+    AddEdges [((w, MemoryStage), (i,     MemoryStage     ), "STBFwd", "red");
+              ((i, MemoryStage), (w, (0, MemoryHierarchy)), "STBFwd", "purple")] /\
+  ~exists microop "w'",
+    IsAnyWrite w' /\ SameVirtualAddress w w' /\ SameCore w w' /\
+    ProgramOrder w w' /\ ProgramOrder w' i.
+
+DefineMacro "STBEmpty":
+forall microop "w", (
+  IsAnyWrite w => SameCore w i => SameVirtualAddress w i => ProgramOrder w i =>
+  AddEdge ((w, (0, MemoryHierarchy)), (i, MemoryStage), "STBEmpty", "purple")).
+
+DefineMacro "ReadFromLatestValue":
+exists microop "w", (
+  IsAnyWrite w /\ SamePhysicalAddress w i /\ SameData w i /\
+  AddEdge ((w, (0, MemoryHierarchy)), (i,     MemoryStage ), "rf", "red") /\
+  ~(exists microop "w'",
+    IsWrite w' /\
+    SamePhysicalAddress i w' /\
+    EdgesExist [((w , (0, MemoryHierarchy)), (w', (0, MemoryHierarchy)), "");
+                ((w', (0, MemoryHierarchy)), (i ,     MemoryStage     ), "")])).
+
+DefineMacro "BeforeOrAfterEveryWriteToSamePA":
+  % Either before or after every write to the same physical address
+  forall microop "w", (
+    (IsAnyWrite w /\ SamePhysicalAddress w i) =>
+    (AddEdge ((w, (0, MemoryHierarchy)), (i,     MemoryStage     ), "wsrf", "darkred") \/
+     AddEdge ((i,     MemoryStage     ), (w, (0, MemoryHierarchy)), "fr"  , "red"))).
+
+DefineMacro "BeforeAllWrites":
+  % Read occurs before all writes to same PA & Data
+  DataFromInitialStateAtPA i /\
+  forall microop "w", (
+    IsAnyWrite w => SamePhysicalAddress w i => ~SameMicroop i w =>
+    AddEdge ((i, MemoryStage), (w, (0, MemoryHierarchy)), "fr", "red")).
+
+Axiom "WriteIsBeforeFinal":
+  forall microop "w",
+  OnCore c w => (
+    forall microop "w'",
+    IsAnyWrite w => IsAnyWrite w' => SamePhysicalAddress w w' =>
+       ~SameMicroop w w' => DataFromFinalStateAtPA w' =>
+    AddEdge ((w, (0, MemoryHierarchy)), (w', (0, MemoryHierarchy)), "ws_final", "red")).
+
+Axiom "WriteSerialization":
+SameCore 0 c =>
+forall microops "i1", forall microops "i2",
+(~SameMicroop i1 i2) => IsAnyWrite i1 => IsAnyWrite i2 => SamePhysicalAddress i1 i2 => (
+(AddEdge ((i1, (0, MemoryHierarchy)), (i2, (0, MemoryHierarchy)), "ws", "red")) \/
+(AddEdge ((i2, (0, MemoryHierarchy)), (i1, (0, MemoryHierarchy)), "ws", "red"))).
+
+Axiom "Reads":
+forall microops "i",
+OnCore c i =>
+IsAnyRead i =>
+AddEdges [((i, Fetch),       (i, Decode),      "path");
+          ((i, Decode),      (i, Execute),     "path");
+          ((i, Execute),     (i, MemoryStage), "path");
+          ((i, MemoryStage), (i, Writeback),   "path")]
+/\
+(
+  KnownData i
+  =>
+  (
+    ExpandMacro STBFwd
+    \/
+    (
+      ExpandMacro STBEmpty /\
+      ExpandMacro BeforeOrAfterEveryWriteToSamePA /\
+      (ExpandMacro BeforeAllWrites \/ ExpandMacro ReadFromLatestValue)
+    )
+  )
+).
+
+Axiom "Writes":
+forall microops "i",
+OnCore c i =>
+IsAnyWrite i =>
+AddEdges [((i, Fetch      ), (i,     Decode          ), "path");
+          ((i, Decode     ), (i,     Execute         ), "path");
+          ((i, Execute    ), (i,     MemoryStage     ), "path");
+          ((i, MemoryStage), (i,     Writeback       ), "path");
+          ((i, Writeback  ), (i,     StoreBuffer     ), "path");
+          ((i, StoreBuffer), (i, (0, MemoryHierarchy)), "path")].
+
+Axiom "mfence":
+forall microops "f",
+OnCore c f =>
+IsAnyFence f =>
+AddEdges [((f, Fetch       ), (f,     Decode      ), "path");
+          ((f, Decode      ), (f,     Execute     ), "path");
+          ((f, Execute     ), (f,     MemoryStage ), "path");
+          ((f, MemoryStage ), (f,     Writeback   ), "path")]
+/\ (
+  forall microops "w",
+  ((IsAnyWrite w /\ SameCore w f /\ ProgramOrder w f) =>
+     AddEdge ((w, (0, MemoryHierarchy)), (f,     Execute ), "mfence", "orange"))).
+
+Axiom "RMW":
+forall microop "w",
+IsAnyWrite w => AccessType RMW w =>
+(forall microops "i2", ProgramOrder w i2 => IsAnyRead i2 =>
+  AddEdge ((w, (0, MemoryHierarchy)), (i2, MemoryStage), "rmw", "orange")) /\
+(exists microop "r", ConsecutiveMicroops r w /\ IsAnyRead r /\ AccessType RMW r /\
+  ~exists microop "w'", IsAnyWrite w' /\ SamePhysicalAddress w w' /\
+    EdgesExist [((r ,     MemoryStage     ), (w', (0, MemoryHierarchy)), "");
+                ((w', (0, MemoryHierarchy)), (w , (0, MemoryHierarchy)), "")]).
+
+Axiom "PO/Fetch":
+forall microops "i1",
+forall microops "i2",
+(OnCore c i1 /\ OnCore c i2 /\ ProgramOrder i1 i2) =>
+AddEdge ((i1, Fetch), (i2, Fetch), "PO", "blue").
+
+Axiom "Decode_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Fetch), (i2, Fetch), "") =>
+NodesExist [(i1, Decode); (i2, Decode)] =>
+AddEdge ((i1, Decode), (i2, Decode), "PPO", "darkgreen").
+
+Axiom "Execute_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Decode), (i2, Decode), "") =>
+NodesExist [(i1, Execute); (i2, Execute)] =>
+AddEdge ((i1, Execute), (i2, Execute), "PPO", "darkgreen").
+
+Axiom "Memory_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Execute), (i2, Execute), "") =>
+NodesExist [(i1, MemoryStage); (i2, MemoryStage)] =>
+AddEdge ((i1, MemoryStage), (i2, MemoryStage), "PPO", "darkgreen").
+
+Axiom "Writeback_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, MemoryStage), (i2, MemoryStage), "") =>
+NodesExist [(i1, Writeback);  (i2, Writeback)] =>
+AddEdge ((i1, Writeback), (i2, Writeback), "PPO", "darkgreen").
+
+Axiom "STB_FIFO":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Writeback), (i2, Writeback), "") =>
+NodesExist [(i1, StoreBuffer); (i2, StoreBuffer)] =>
+AddEdge ((i1, StoreBuffer), (i2, StoreBuffer), "PPO", "darkgreen").
+
+Axiom "STB_OneAtATime":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, StoreBuffer), (i2, StoreBuffer), "") =>
+NodesExist [(i1, (0, MemoryHierarchy)); (i2, StoreBuffer)] =>
+AddEdge ((i1, (0, MemoryHierarchy)), (i2, StoreBuffer), "PPO", "darkgreen").

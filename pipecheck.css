@@ -1,0 +1,103 @@
+.nowrap {
+  white-space: nowrap;
+}
+
+#model { 
+  position: relative;
+  height: 300px;
+  min-height: 50px;
+  max-height: 100%;
+  width: auto;
+  padding: 5px;
+  border: 1px solid black
+}
+
+#model-editor {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  padding: 5px
+}
+
+#test { 
+  position: relative;
+  height: 200px;
+  min-height: 50px;
+  max-height: 100%;
+  width: auto;
+  padding: 5px;
+  border: 1px solid black
+}
+
+.textareacontainer { 
+  position: relative;
+  height: 200px;
+  min-height: 50px;
+  max-height: 100%;
+  width: auto;
+  padding: 5px;
+  border: 1px solid black
+}
+
+.textlog { 
+  position: relative;
+  height: 100%;
+  width: 100%;
+  padding: 0px;
+  border: 0px;
+  resize: none;
+}
+
+#test-editor {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  padding: 5px
+}
+
+#graph-div {
+  position: relative;
+  left: 0;
+  top: 0px;
+  min-height: 100px;
+  height: calc(100% - 50px);
+  width: 100%;
+  border: 1px solid black
+}
+
+.ui-widget {
+  font-size: small;
+}
+
+.ui-autocomplete {
+  max-height: 200px;
+  overflow-y: auto;
+  /* prevent horizontal scrollbar */
+  overflow-x: hidden;
+}
+
+.stricter {
+  font-weight: bold;
+  color: orange;
+}
+
+.weaker {
+  font-weight: bold;
+  color: red;
+}
+
+.ui-layout-north {
+  text-align: center
+}
+
+path {
+  pointer-events: all;
+}
+
+path:hover {
+  stroke-width: 5;
+}
