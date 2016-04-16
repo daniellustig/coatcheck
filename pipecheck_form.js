@@ -32,7 +32,7 @@ function resetAll(clearLogs) {
   if (clearLogs) {
     $("#log").val("");
     $("#result").val("");
-    $("#latest-log-entry").text("Welcome! To begin, choose a model, choose a test, and click submit!");
+    $("#latest-log-entry").html('Welcome! To begin, choose a model, choose a test, and click submit! [<a href="http://github.com/daniellustig/coatcheck">Help</a>]');
   }
 
   modelEditor.setReadOnly(false);
