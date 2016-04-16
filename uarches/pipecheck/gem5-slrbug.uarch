@@ -1,0 +1,202 @@
+StageName 0 "Fetch".
+StageName 1 "Decode".
+StageName 2 "Rename".
+StageName 3 "Issue".
+StageName 4 "Execute".
+StageName 5 "CacheLineInvalidated".
+StageName 6 "Writeback".
+StageName 7 "Commit".
+StageName 8 "StoreBuffer".
+StageName 9 "MemoryHierarchy".
+
+DefineMacro "IsLatestMatchingSTBEntry":
+  ~exists microop "w'",
+  IsAnyWrite w' /\ SameVirtualAddress w w' /\ SameCore w w' /\
+  ProgramOrder w w' /\ ProgramOrder w' i.
+
+DefineMacro "STBFwd":
+  % Forward from the store buffer
+  exists microop "w", (
+    IsAnyWrite w /\
+    SameCore w i /\
+    SameVirtualAddress w i /\
+    SameData w i /\
+    AddEdges [((w, Execute), (i, Execute), "STBFwd", "red");
+              ((i, Execute), (w, (0, MemoryHierarchy)), "STBFwd", "purple")]) /\
+    ExpandMacro IsLatestMatchingSTBEntry.
+
+DefineMacro "STBEmpty":
+  % Store buffer is empty
+  forall microop "w", (
+    (IsAnyWrite w /\ SameCore w i /\ SameVirtualAddress w i /\ ProgramOrder w i) =>
+    AddEdge ((w, (0, MemoryHierarchy)), (i, Execute), "STBEmpty", "purple")).
+
+DefineMacro "NoWritesToSamePABetweenSourceAndRead":
+  % Read from "w", and there must not exist any writes w' in between w and i
+  exists microop "w", (
+    IsAnyWrite w /\
+    SamePhysicalAddress w i /\
+    SameData w i /\
+    AddEdge ((w, (0, MemoryHierarchy)), (i, Execute), "rf", "red") /\
+    ~(exists microop "w'",
+      SamePhysicalAddress i w' /\
+      EdgesExist [((w , (0, MemoryHierarchy)), (w', (0, MemoryHierarchy)), "");
+                  ((w', (0, MemoryHierarchy)), (i , Execute), "")])).
+
+DefineMacro "BeforeOrAfterEveryWriteToSamePA":
+  % Either before or after every write to the same physical address
+  forall microop "w", (
+    (IsAnyWrite w /\ SamePhysicalAddress w i) =>
+    (AddEdge ((w, (0, MemoryHierarchy)), (i, Execute), "wsrf", "darkred") \/
+     AddEdge ((i, CacheLineInvalidated), (w, (0, MemoryHierarchy)), "fr", "red"))).
+
+DefineMacro "BeforeAllWrites":
+  % Read occurs before all writes to same PA & Data
+  DataFromInitialStateAtPA i /\
+  forall microop "w", (
+    (IsAnyWrite w /\ SamePhysicalAddress w i /\ ~SameMicroop i w) =>
+    AddEdge ((i, CacheLineInvalidated), (w, (0, MemoryHierarchy)), "fr", "red")).
+
+DefineMacro "WriteIsBeforeFinal":
+  forall microop "w",
+  forall microop "w'",
+  (IsAnyWrite w /\ IsAnyWrite w' /\ SamePhysicalAddress w w' /\
+     ~SameMicroop w w' /\ DataFromFinalStateAtPA w') =>
+  AddEdge ((w, (0, MemoryHierarchy)), (w', (0, MemoryHierarchy)), "ws_final", "red").
+
+Axiom "WriteSerialization":
+% Only evaluate ws on one core.  Otherwise it's repeated and grows
+% exponentially!
+SameCore 0 c =>
+forall microops "i1", forall microops "i2",
+( ~(SameMicroop i1 i2) /\ IsAnyWrite i1 /\ IsAnyWrite i2 /\ SamePhysicalAddress i1 i2) =>
+(AddEdge ((i1, (0, MemoryHierarchy)), (i2, (0, MemoryHierarchy)), "ws", "red") \/
+ AddEdge ((i2, (0, MemoryHierarchy)), (i1, (0, MemoryHierarchy)), "ws", "red")).
+
+Axiom "Reads":
+forall microops "i",
+OnCore c i =>
+IsAnyRead i =>
+AddEdges [((i, Fetch),      (i, Decode),     "path");
+          ((i, Decode),     (i, Rename),    "path");
+          ((i, Rename),     (i, Issue),    "path");
+          ((i, Issue),      (i, Execute),  "path");
+          ((i, Execute),    (i, Writeback), "path");
+          ((i, Writeback), (i, Commit),  "path");
+          ((i, Execute), (i, CacheLineInvalidated), "path")]
+/\
+(
+  ExpandMacro STBFwd
+  \/
+  (ExpandMacro STBEmpty
+    /\
+    (
+      ExpandMacro BeforeAllWrites
+      \/
+      (
+        ExpandMacro NoWritesToSamePABetweenSourceAndRead
+        /\
+        ExpandMacro BeforeOrAfterEveryWriteToSamePA
+      )
+    )
+  )
+).
+
+Axiom "Writes":
+forall microops "i",
+OnCore c i =>
+IsAnyWrite i =>
+AddEdges [((i, Fetch),      (i, Decode),     "path");
+          ((i, Decode),     (i, Rename),    "path");
+          ((i, Rename),     (i, Issue),    "path");
+          ((i, Issue),      (i, Execute),  "path");
+          ((i, Execute),    (i, Writeback), "path");
+          ((i, Writeback), (i, Commit),  "path");
+          ((i, Commit),   (i, StoreBuffer),     "path");
+          ((i, StoreBuffer), (i, (0, MemoryHierarchy)), "path")]
+/\ (
+  ExpandMacro WriteIsBeforeFinal
+) /\ (
+% Only one at a time allowed out from the store buffer
+forall microop "w", (
+  (IsAnyWrite w /\ SameCore w i /\ ProgramOrder i w) =>
+    AddEdges [((i, (0, MemoryHierarchy)), (w, StoreBuffer), "STBOne", "brown")])
+).
+
+Axiom "mfence":
+forall microops "f",
+OnCore c f =>
+IsAnyFence f =>
+AddEdges [((f, Fetch),      (f, Decode),     "path");
+          ((f, Decode),     (f, Rename),    "path");
+          ((f, Rename),     (f, Issue),    "path");
+          ((f, Issue),      (f, Execute),  "path");
+          ((f, Execute),    (f, Writeback), "path");
+          ((f, Writeback), (f, Commit),  "path")]
+/\ (
+  forall microops "w",
+  ((IsAnyWrite w /\ SameCore w f /\ ProgramOrder w f) =>
+     AddEdge ((w, (0, MemoryHierarchy)), (f, Execute), "mfence", "orange")))
+/\ (
+  forall microops "r",
+  ((IsAnyRead r /\ SameCore r f /\ ProgramOrder f r) =>
+     AddEdge ((f, Execute), (r, Execute), "mfence", "orange"))).
+
+Axiom "RMW":
+forall microop "w",
+OnCore c w =>
+IsAnyWrite w => AccessType RMW w =>
+(forall microops "i2", ProgramOrder w i2 => IsAnyRead i2 /\
+  AddEdge ((w, (0, MemoryHierarchy)), (i2, (CoreOf i2, Execute)), "rmw", "orange")) /\
+(exists microop "r", ConsecutiveMicroops r w /\ IsAnyRead r /\ AccessType RMW r /\
+  ~exists microop "w'", IsAnyWrite w' /\ SamePhysicalAddress w w' /\
+    EdgesExist [((r , (CoreOf r, Execute)), (w', (0, MemoryHierarchy)), "");
+                ((w', (0,    MemoryHierarchy)), (w , (0, MemoryHierarchy)), "")]).
+
+Axiom "PO/Fetch":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+ProgramOrder i1 i2 =>
+AddEdge ((i1, Fetch), (i2, Fetch), "PO", "blue").
+
+Axiom "Decode_stage_is_in-order":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+EdgeExists ((i1, Fetch),  (i2, Fetch), "") =>
+NodesExist [(i1, Decode); (i2, Decode)] =>
+AddEdge ((i1, Decode), (i2, Decode), "PPO", "darkgreen").
+
+Axiom "Rename_is_in_decode_order":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+EdgeExists ((i1, Decode),  (i2, Decode), "") =>
+NodesExist [(i1, Rename); (i2, Rename)] =>
+AddEdge ((i1, Rename), (i2, Rename), "PPO", "darkgreen").
+
+Axiom "Commit_is_in_rename_order":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+EdgeExists ((i1, Rename),  (i2, Rename), "") =>
+NodesExist [(i1, Commit); (i2, Commit)] =>
+AddEdge ((i1, Commit), (i2, Commit), "PPO", "darkgreen").
+
+Axiom "STB_FIFO":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+EdgeExists ((i1, Writeback),   (i2, Writeback), "") =>
+NodesExist [(i1, StoreBuffer); (i2, StoreBuffer)] =>
+AddEdge ((i1, StoreBuffer), (i2, StoreBuffer), "PPO", "darkgreen").
+
+Axiom "SLR":
+forall microops "i1",
+OnCore c i1 =>
+forall microops "i2",
+IsAnyRead i1 /\ IsAnyRead i2 /\ ProgramOrder i1 i2 =>
+SamePhysicalAddress i1 i2 =>
+AddEdge ((i1, CacheLineInvalidated), (i2, Execute), "SLR", "pink").
+

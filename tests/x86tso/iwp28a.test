@@ -1,0 +1,85 @@
+Alternative
+0 0 0 0 (Read RMW (VA 0 0) (PA 0 0) (Data 1))
+1 0 0 0 (Write RMW (VA 0 0) (PA 0 0) (Data 1))
+2 0 0 0 (Read normal (VA 1 0) (PA 1 0) (Data 0))
+3 1 0 0 (Read RMW (VA 1 0) (PA 1 0) (Data 1))
+4 1 0 0 (Write RMW (VA 1 0) (PA 1 0) (Data 1))
+5 1 0 0 (Read normal (VA 0 0) (PA 0 0) (Data 0))
+Relationship iico_control 0 0 -> 1 0
+Relationship iico_control 3 0 -> 4 0
+Relationship rf 1 0 -> 0 0
+Relationship rf 4 0 -> 3 0
+Relationship po 0 0 -> 1 0
+Relationship po 1 0 -> 2 0
+Relationship po 3 0 -> 4 0
+Relationship po 4 0 -> 5 0
+Relationship implied 1 0 -> 2 0
+Relationship implied 4 0 -> 5 0
+Relationship fr 2 0 -> 4 0
+Relationship fr 5 0 -> 1 0
+Relationship po 0 0 -> 2 0
+Relationship po 3 0 -> 5 0
+Alternative
+0 0 0 0 (Read RMW (VA 0 0) (PA 0 0) (Data 1))
+1 0 0 0 (Write RMW (VA 0 0) (PA 0 0) (Data 1))
+2 0 0 0 (Read normal (VA 1 0) (PA 1 0) (Data 0))
+3 1 0 0 (Read RMW (VA 1 0) (PA 1 0) (Data 0))
+4 1 0 0 (Write RMW (VA 1 0) (PA 1 0) (Data 1))
+5 1 0 0 (Read normal (VA 0 0) (PA 0 0) (Data 0))
+Relationship iico_control 0 0 -> 1 0
+Relationship iico_control 3 0 -> 4 0
+Relationship rf 1 0 -> 0 0
+Relationship po 0 0 -> 1 0
+Relationship po 1 0 -> 2 0
+Relationship po 3 0 -> 4 0
+Relationship po 4 0 -> 5 0
+Relationship implied 1 0 -> 2 0
+Relationship implied 4 0 -> 5 0
+Relationship fr 2 0 -> 4 0
+Relationship fr 3 0 -> 4 0
+Relationship fr 5 0 -> 1 0
+Relationship po 0 0 -> 2 0
+Relationship po 3 0 -> 5 0
+Alternative
+0 0 0 0 (Read RMW (VA 0 0) (PA 0 0) (Data 0))
+1 0 0 0 (Write RMW (VA 0 0) (PA 0 0) (Data 1))
+2 0 0 0 (Read normal (VA 1 0) (PA 1 0) (Data 0))
+3 1 0 0 (Read RMW (VA 1 0) (PA 1 0) (Data 1))
+4 1 0 0 (Write RMW (VA 1 0) (PA 1 0) (Data 1))
+5 1 0 0 (Read normal (VA 0 0) (PA 0 0) (Data 0))
+Relationship iico_control 0 0 -> 1 0
+Relationship iico_control 3 0 -> 4 0
+Relationship rf 4 0 -> 3 0
+Relationship po 0 0 -> 1 0
+Relationship po 1 0 -> 2 0
+Relationship po 3 0 -> 4 0
+Relationship po 4 0 -> 5 0
+Relationship implied 1 0 -> 2 0
+Relationship implied 4 0 -> 5 0
+Relationship fr 0 0 -> 1 0
+Relationship fr 2 0 -> 4 0
+Relationship fr 5 0 -> 1 0
+Relationship po 0 0 -> 2 0
+Relationship po 3 0 -> 5 0
+Alternative
+0 0 0 0 (Read RMW (VA 0 0) (PA 0 0) (Data 0))
+1 0 0 0 (Write RMW (VA 0 0) (PA 0 0) (Data 1))
+2 0 0 0 (Read normal (VA 1 0) (PA 1 0) (Data 0))
+3 1 0 0 (Read RMW (VA 1 0) (PA 1 0) (Data 0))
+4 1 0 0 (Write RMW (VA 1 0) (PA 1 0) (Data 1))
+5 1 0 0 (Read normal (VA 0 0) (PA 0 0) (Data 0))
+Relationship iico_control 0 0 -> 1 0
+Relationship iico_control 3 0 -> 4 0
+Relationship po 0 0 -> 1 0
+Relationship po 1 0 -> 2 0
+Relationship po 3 0 -> 4 0
+Relationship po 4 0 -> 5 0
+Relationship implied 1 0 -> 2 0
+Relationship implied 4 0 -> 5 0
+Relationship fr 0 0 -> 1 0
+Relationship fr 2 0 -> 4 0
+Relationship fr 3 0 -> 4 0
+Relationship fr 5 0 -> 1 0
+Relationship po 0 0 -> 2 0
+Relationship po 3 0 -> 5 0
+Forbidden

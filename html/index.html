@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+<title>&mu;hbCheck Web Interface (ALPHA)</title>
+<link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">
+<script src="//code.jquery.com/jquery-1.10.2.js"></script>
+<script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+<script src="jquery.layout.min.js"></script>
+<script src="ace.js" type="text/javascript" charset="utf-8"></script>
+<script src="pako_inflate.min.js" type="text/javascript" charset="utf-8"></script>
+<link rel="stylesheet" href="pipecheck.css">
+<link rel="stylesheet" type="text/css" href="layout-uhbcheck.css">
+</head>
+<body>
+<div class="ui-layout-north">
+  <h1>&mu;hbCheck Web Interface (ALPHA)</h1>
+  <div id="modelDialog" title="Discard changes?">
+  </div>
+  <div id="log-div">
+    <span id="latest-log-entry"></span>
+    <br />
+  </div>
+</div>
+<div class="ui-layout-center">
+  <h3>(Micro)architecture Model:</h3>
+  <div class="ui-widget">
+    <input id="modelselect">
+    </input>
+    <span id="modelModified"></span>
+  </div>
+  <div id="model">
+    <div id="model-editor">
+    </div>
+  </div>
+  <br />
+  <h3>Litmus test:</h3>
+  <div class="ui-widget">
+    <input id="testselect">
+    </input>
+    <span id="maxtests"></span>
+  </div>
+  <div id="test">
+    <div id="test-editor">
+    </div>
+  </div>
+  <br />
+  <button id="run-button">Submit</button>
+  <button id="reset-button">Reset</button>
+  <hr>
+  <h3>Log:</h3>
+  <div class="textareacontainer">
+    <textarea id="log" class="textlog" readonly>
+    </textarea>
+  </div>
+  <br />
+  <h3>Graph contents:</h3>
+  <div class="textareacontainer">
+    <textarea id="result" class="textlog" readonly>
+    </textarea>
+  </div>
+</div>
+<div class="ui-layout-east">
+  <!--
+  <h3>Result:</h3>
+  <br />
+  -->
+  <button id="graphbutton">Recenter</button>
+  <span id="resulttext"></span>
+  <br />
+  <br />
+  <div id="graph-div">
+    <!--
+    <g id="graph-outer">
+      <g id="graph-inner">
+      </g>
+    </g>
+    -->
+  </div>
+</div>
+
+<script src="pipecheck_form.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+
+</body>
+</html>

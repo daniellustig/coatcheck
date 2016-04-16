@@ -1,0 +1,237 @@
+Get the latest herd from github.com/herd/herdtools
+update Makefile to point to some appropriate path
+make
+
+Checkout latest PipeCheck from github.com/PrincetonUniversity/pipecheck
+make
+
+copy herdtools/herd/sc.cat into PipeCheck/
+
+--
+
+To build the web app (only if you want to):
+- opam install js_of_ocaml
+
+Go to PipeCheck/ folder
+make web (takes a few mins)
+mkdir html/tests
+mkdir html/models
+cp tests/x86tso/sb.test html/tests
+cp uarches/tso2.uarch html/models
+python -m SimpleHTTPServer
+Open browser, go to localhost:<port opened by SimpleHTTPServer>
+
+--
+
+To run:
+./pipecheck -i tests/x86tso/sb.test -m <DSL model> -o output.gv
+
+To debug:
+-v <verbosity level>
+
+Can also either comment out lines or hard code new constraints or edges.
+Can use "-e <extra file>" to append a second model file to the main model, i.e.,
+to add new lines to a separate file so the main file doesn't get polluted.
+
+--
+
+Notes on test specification format:
+
+Overall structure:
+<initial condition>
+<programs>
+<outcome>
+
+Components:
+
+<initial/final condition>:
+"<pa> = <data>"
+(with <pa> and <data> as defined below)
+
+<program>:
+"Alternative"
+<instructions>
+<relationships>
+<final conditions>
+
+<instructions>:
+Example:
+0 0 0 0 (Read Acquire RMW (VA 0 0) (PA 0 0) (Data 0))
+Syntax:
+<globalID> <coreID> <threadID> <intraInstID> <opcode>
+<globalID>: a unique ID for every Instruction
+<coreID>: the core on which the thread is running
+<threadID>: unique thread ID per core (always 0 except in COATCheck)
+<intraInstID>: the intra-instruction ID (always 0 except in COATCheck)
+
+Opcode:
+"({Read|Write|Fence} <flags> <va> <pa> <data>)"
+
+Read|Write|Fence: obvious
+<flags>: zero or more string identifiers (e.g., "RMW", "Acquire", etc.)
+(NB: previously, there was always exactly one flag, and a flag of "normal"
+  indicated essentially "no flag".  Now, there can be arbitrarily many flags,
+  so "normal" is redundant and ignored.  You might still see it around though.)
+<va>: "(VA <vtag> <vindex>)"
+  <vtag>: virtual address tag (integer)
+  <vindex>: virtual address index (always 0 except in COATCheck)
+<pa>: "(PA <ptag> <pindex>)"
+  <ptag>: physical address tag (integer) (should match vtag except in COATCheck)
+  <pindex>: physical address index (always 0 except in COATCheck)
+
+<outcome>:
+{Permitted|Forbidden|Required|Unobserved}
+
+<relationship>:
+"Relationship <name> <globalID0> 0 -> <globalID1> 0"
+Example:
+"Relationship po 0 0 -> 1 0"
+Accessed from within the DSL via, e.g.,:
+"HasDependency po i1 i2"
+
+All po, rf, co, fr, etc. emitted by herd can be accessed this way.
+
+Example: SB.test
+"""
+Alternative
+0 0 0 0 (Write (VA 0 0) (PA 0 0) (Data 1))
+1 0 0 0 (Read (VA 1 0) (PA 1 0) (Data 0))
+2 1 0 0 (Write (VA 1 0) (PA 1 0) (Data 1))
+3 1 0 0 (Read (VA 0 0) (PA 0 0) (Data 0))
+Relationship po 0 0 -> 1 0
+Relationship po 2 0 -> 3 0
+Relationship fr 1 0 -> 2 0
+Relationship fr 3 0 -> 0 0
+Permitted
+"""
+
+Example: yatin_mp_st_roach.test
+"""
+Alternative
+0 0 0 0 (Write (VA 0 0) (PA 0 0) (Data 1))
+1 0 0 0 (Write Release (VA 1 0) (PA 1 0) (Data 1))
+2 1 0 0 (Read (VA 1 0) (PA 1 0) (Data 1))
+3 1 0 0 (Read Acquire Release (VA 0 0) (PA 0 0) (Data 0))
+Relationship po 0 0 -> 1 0
+Relationship po 2 0 -> 3 0
+Relationship rf 1 0 -> 2 0
+Relationship fr 3 0 -> 0 0
+Forbidden
+"""
+
+--
+
+Notes on DSL specifications:
+
+Two parts:
+StageNames
+Axioms
+
+Goal: "search for any uhb graph which satisfies all of the axioms"
+Axiom A AND Axiom B AND ... AND Axiom N AND acyclic(graph)
+
+Everything is just a boolean logic value
+Combined using AND, OR, NOT
+Quantify using "exists" or "forall", over microops or cores
+Use lots of parentheses: precedence rules not heavily tested
+
+EdgeExists/EdgesExist/AddEdges/AddEdge: all the same
+True if edge is in the graph, false otherwise
+not an imperative statement
+
+Node Syntax:
+(instruction, stage)
+Example:
+Axiom "Dummy":
+  exists microop "i", NodeExists (i, Fetch).
+
+Detail: the full syntax is (instruction, (core, stage)).  The default of
+(instruction, stage) is sugar for (instruction, (CoreOf instruction, stage)).
+To indicate that a stage is shared between cores, only refer to the stage using
+one of the appropriate cores.  For example: for an LLC which is shared among
+all of the cores, have all references to that LLC use core 0:
+(instruction, (0, stage)).
+Example:
+Axiom "Dummy":
+  exists microop "i", NodeExists (i, (0, ReachL2Cache)).
+
+Edge Syntax
+(node, node, "label" [, "color"])
+
+DefineMacro, ExpandMacro.
+Can take arguments; not well tested.  Existing variables carried through
+to expansion.
+
+PipeCheck currently instantiates a new copy of the spec for each separate core.
+(This is in preparation for enabling heterogeneity one day).  Most per-core
+axioms should therefore have a precondition stating that the axiom only applies
+to events taking place on that core:
+"OnCore c => ..."
+
+For shared locations, can instead assign the task to core 0:
+"SameCore 0 c => ..."
+
+--
+
+Complete example
+
+Not really a microarchitecture, but a self-contained example which is small
+enough to hold in your head.
+
+Litmus test (triple quotes excluded):
+"""
+Alternative
+0 0 0 0 (Write (VA 0 0) (PA 0 0) (Data 1))
+1 0 0 0 (Read (VA 1 0) (PA 1 0) (Data 0))
+Relationship po 0 0 -> 1 0
+Permitted
+"""
+
+"uarch" specification (triple quotes excluded):
+"""
+StageName 0 "Stage0".
+StageName 1 "Stage1".
+
+Axiom "Writes":
+  forall microops "w",
+    IsAnyWrite w
+    =>
+    EdgeExists ((w, Stage0), (w, Stage1), "path").
+
+Axiom "Reads":
+  forall microops "r",
+    IsAnyRead r
+    =>
+    EdgeExists ((r, Stage1), (r, Stage0), "path").
+
+Axiom "Stage0Order":
+  forall microops "i1",
+    forall microops "i2",
+      (~SameMicroop i1 i2)  % otherwise there would be self-loops
+      =>
+      (
+        EdgeExists ((i1, Stage0), (i2, Stage0), "Stage0Order")
+        \/
+        EdgeExists ((i2, Stage0), (i1, Stage0), "Stage0Order")
+      ).
+
+Axiom "Stage1Order":
+  forall microops "i1",
+    forall microops "i2",
+      (~SameMicroop i1 i2)  % otherwise there would be self-loops
+      =>
+      (
+        EdgeExists ((i1, Stage1), (i2, Stage1), "Stage1Order")
+        \/
+        EdgeExists ((i2, Stage1), (i1, Stage1), "Stage1Order")
+      ).
+
+Axiom "ReverseFIFOOrder":
+  forall microops "i1",
+    forall microops "i2",
+      % edge labels are purely cosmetic; they are ignored entirely
+      % by the analysis and by the solver
+      EdgeExists ((i1, Stage0), (i2, Stage0), "doesntmatter")
+      =>
+      EdgeExists ((i2, Stage1), (i1, Stage1), "Stage1Order").
+"""

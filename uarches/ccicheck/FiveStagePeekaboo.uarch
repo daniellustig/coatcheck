@@ -1,0 +1,232 @@
+% Legend:
+% "/\" = AND
+% "\/" = OR
+% "~"  = NOT
+% "=>" = IMPLIES
+% "%"  = COMMENT
+%
+% Graph node = (instruction, (pipeline, stage number))
+% Graph edge = (node, node, label)
+%
+% "c" is predefined to be the core ID
+
+StageName 0 "Fetch".
+StageName 1 "Decode".
+StageName 2 "Execute".
+StageName 3 "MemoryStage".
+StageName 4 "Writeback".
+StageName 5 "StoreBuffer".
+StageName 6 "ViCLRequest".
+StageName 7 "ViCLCreate".
+StageName 8 "ViCLInvalidate".
+StageName 9 "ViCLExpire".
+
+DefineMacro "STBFwd":
+  exists microop "w",
+    IsAnyWrite w /\ SameVirtualAddress w i /\ SameCore w i /\ SameData w i /\
+    AddEdges [((w, MemoryStage), (i,     MemoryStage), "STBFwd", "red");
+              ((i, MemoryStage), (w, ViCLCreate), "STBFwd", "purple")] /\
+  ~exists microop "w'",
+    IsAnyWrite w' /\ SameVirtualAddress w w' /\ SameCore w w' /\
+    ProgramOrder w w' /\ ProgramOrder w' i.
+
+DefineMacro "STBEmpty":
+forall microop "w", (
+  IsAnyWrite w => SameCore w i => SameVirtualAddress w i => ProgramOrder w i =>
+  AddEdge ((w, ViCLCreate), (i, MemoryStage), "STBEmpty", "purple")).
+
+DefineMacro "FindL1ViCLNormal":
+exists microop "s", (
+  SamePhysicalAddress s i /\ SameData s i /\ SameCore s i /\
+  AddEdges [((s, ViCLCreate ), (i, MemoryStage   ), "rf", "red");
+            ((i, MemoryStage), (s, ViCLInvalidate), "rf", "brown");
+            ((s, ViCLCreate ), (s, ViCLInvalidate), "path")]).
+
+DefineMacro "FindL1ViCLPeekaboo":
+(~AccessType RMW i) /\
+  AddEdges [((i, ViCLInvalidate), (i, ViCLCreate ), "path");
+            ((i, ViCLCreate    ), (i, MemoryStage), "rf", "red");
+            ((i, MemoryStage   ), (i, ViCLExpire ), "rf", "brown")] /\
+  forall microop "i'",
+    ProgramOrder i' i => (
+    (IsAnyRead i' =>
+      AddEdge ((i', MemoryStage), (i, ViCLRequest), "peekaboo", "brown")) /\
+    (IsAnyWrite i' =>
+      AddEdge ((i', ViCLCreate), (i, ViCLRequest), "peekaboo", "brown"))).
+
+DefineMacro "FindL1ViCL":
+  ExpandMacro FindL1ViCLNormal \/ ExpandMacro FindL1ViCLPeekaboo.
+
+Axiom "WriteIsBeforeFinal":
+  forall microop "w",
+  OnCore c w => (
+    forall microop "w'",
+    IsAnyWrite w => IsAnyWrite w' => SamePhysicalAddress w w' =>
+       ~SameMicroop w w' => DataFromFinalStateAtPA w' =>
+    AddEdge ((w, ViCLInvalidate), (w', ViCLCreate), "ws_final", "red")).
+
+Axiom "Reads":
+forall microops "i",
+OnCore c i =>
+IsAnyRead i =>
+AddEdges [((i, Fetch),       (i, Decode),      "path");
+          ((i, Decode),      (i, Execute),     "path");
+          ((i, Execute),     (i, MemoryStage), "path");
+          ((i, MemoryStage), (i, Writeback),   "path")]
+/\
+(
+  KnownData i
+  =>
+  (
+    ExpandMacro STBFwd
+    \/
+    (
+      ExpandMacro STBEmpty /\ ExpandMacro FindL1ViCL
+    )
+  )
+).
+
+Axiom "Writes":
+forall microops "i",
+OnCore c i =>
+IsAnyWrite i =>
+AddEdges [((i, Fetch         ), (i, Decode        ), "path");
+          ((i, Decode        ), (i, Execute       ), "path");
+          ((i, Execute       ), (i, MemoryStage   ), "path");
+          ((i, MemoryStage   ), (i, Writeback     ), "path");
+          ((i, Writeback     ), (i, StoreBuffer   ), "path");
+          ((i, StoreBuffer   ), (i, ViCLCreate    ), "path");
+          ((i, ViCLCreate    ), (i, ViCLInvalidate), "path");
+          ((i, ViCLInvalidate), (i, ViCLExpire    ), "path")].
+
+Axiom "mfence":
+forall microops "f",
+OnCore c f =>
+IsAnyFence f =>
+AddEdges [((f, Fetch       ), (f, Decode     ), "path");
+          ((f, Decode      ), (f, Execute    ), "path");
+          ((f, Execute     ), (f, MemoryStage), "path");
+          ((f, MemoryStage ), (f, Writeback  ), "path")]
+/\ (
+  forall microops "w",
+  ((IsAnyWrite w /\ SameCore w f /\ ProgramOrder w f) =>
+     AddEdge ((w, ViCLCreate), (f, Execute), "mfence", "orange"))).
+
+Axiom "RMW":
+forall microop "w",
+IsAnyWrite w => AccessType RMW w =>
+(forall microops "i2", ProgramOrder w i2 => IsAnyRead i2 /\
+  AddEdge ((w, ViCLCreate), (i2, MemoryStage), "rmw", "orange")) /\
+(exists microop "r", ConsecutiveMicroops r w /\ IsAnyRead r /\ AccessType RMW r /\
+  ~exists microop "w'", IsAnyWrite w' /\ SamePhysicalAddress w w' /\
+    EdgesExist [((r ,   MemoryStage  ), (w', ViCLCreate), "");
+                ((w', ViCLCreate), (w , ViCLCreate), "")]).
+
+Axiom "PO/Fetch":
+forall microops "i1",
+forall microops "i2",
+(OnCore c i1 /\ OnCore c i2 /\ ProgramOrder i1 i2) =>
+AddEdge ((i1, Fetch), (i2, Fetch), "PO", "blue").
+
+Axiom "Decode_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Fetch), (i2, Fetch), "") =>
+NodesExist [(i1, Decode); (i2, Decode)] =>
+AddEdge ((i1, Decode), (i2, Decode), "PPO", "darkgreen").
+
+Axiom "Execute_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Decode), (i2, Decode), "") =>
+NodesExist [(i1, Execute); (i2, Execute)] =>
+AddEdge ((i1, Execute), (i2, Execute), "PPO", "darkgreen").
+
+Axiom "Memory_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Execute), (i2, Execute), "") =>
+NodesExist [(i1, MemoryStage); (i2, MemoryStage)] =>
+AddEdge ((i1, MemoryStage), (i2, MemoryStage), "PPO", "darkgreen").
+
+Axiom "Writeback_stage_is_in-order":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, MemoryStage), (i2, MemoryStage), "") =>
+NodesExist [(i1, Writeback);  (i2, Writeback)] =>
+AddEdge ((i1, Writeback), (i2, Writeback), "PPO", "darkgreen").
+
+Axiom "STB_FIFO":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, Writeback), (i2, Writeback), "") =>
+NodesExist [(i1, StoreBuffer); (i2, StoreBuffer)] =>
+AddEdge ((i1, StoreBuffer), (i2, StoreBuffer), "PPO", "darkgreen").
+
+Axiom "STB_OneAtATime":
+forall microops "i1",
+forall microops "i2",
+OnCore c i1 => OnCore c i2 =>
+EdgeExists ((i1, StoreBuffer), (i2, StoreBuffer), "") =>
+NodesExist [(i1, ViCLCreate); (i2, StoreBuffer)] =>
+AddEdge ((i1, ViCLCreate), (i2, StoreBuffer), "PPO", "darkgreen").
+
+DefineMacro "L1ViCLSourceInitial":
+  % Read occurs before all writes to same PA & Data
+  DataFromInitialStateAtPA i /\
+  forall microop "w", (
+    IsAnyWrite w => SamePhysicalAddress w i => ~SameMicroop i w =>
+    AddEdge ((i, ViCLInvalidate), (w, ViCLCreate), "fr", "red")).
+
+DefineMacro "L1ViCLSource":
+  exists microop "i'", (
+    SamePhysicalAddress i i' /\ ~SameMicroop i i' /\ SameData i i' /\
+    AddEdge ((i', ViCLCreate), (i, ViCLCreate), "src", "blue") /\
+    % Don't source from a Peekaboo ViCL
+    AddEdge ((i', ViCLCreate), (i', ViCLInvalidate), "NoPeekabooSrc") /\
+    ~exists microop "i''",
+      SamePhysicalAddress i i'' /\ IsAnyWrite i'' /\
+      EdgesExist [((i' , ViCLCreate), (i'', ViCLCreate), "between");
+                  ((i'', ViCLCreate), (i  , ViCLCreate), "between")]).
+
+Axiom "L1ViCLs":
+  forall microop "i", (
+    OnCore c i => IsAnyRead i =>
+    (NodeExists (i, ViCLCreate) \/ NodeExists (i, ViCLExpire) \/
+     NodeExists (i, ViCLRequest) \/ NodeExists (i, ViCLInvalidate)) => (
+      AddEdges [((i, ViCLRequest   ), (i, ViCLCreate    ), "path");
+                ((i, ViCLRequest   ), (i, ViCLInvalidate), "path");
+                ((i, ViCLCreate    ), (i, ViCLExpire    ), "path");
+                ((i, ViCLInvalidate), (i, ViCLExpire    ), "path")] /\
+      (ExpandMacro L1ViCLSourceInitial \/ ExpandMacro L1ViCLSource))).
+
+Axiom "SWMR":
+SameCore 0 c =>
+forall microops "i1",
+IsAnyWrite i1 =>
+(NodeExists (i1, ViCLCreate) \/ NodeExists (i1, ViCLExpire) \/
+ NodeExists (i1, ViCLRequest) \/ NodeExists (i1, ViCLInvalidate)) =>
+forall microops "i2",
+(NodeExists (i2, ViCLCreate) \/ NodeExists (i2, ViCLExpire) \/
+ NodeExists (i2, ViCLRequest) \/ NodeExists (i2, ViCLInvalidate)) =>
+  (~SameMicroop i1 i2) => IsAnyWrite i1 => SamePhysicalAddress i1 i2 => (
+    (AddEdge ((i2, ViCLInvalidate), (i1, ViCLCreate), "swmr", "purple")) \/
+    (AddEdge ((i1, ViCLCreate), (i2, ViCLCreate), "swmr", "purple"))).
+
+Axiom "L1ViCLNoDups":
+SameCore 0 c =>
+forall microop "i1", (
+  (NodeExists (i1, ViCLCreate) \/ NodeExists (i1, ViCLExpire) \/
+   NodeExists (i1, ViCLRequest) \/ NodeExists (i1, ViCLInvalidate)) =>
+  forall microop "i2", (
+    (~SameMicroop i1 i2) => SameCore i1 i2 => SamePhysicalAddress i1 i2 =>
+      (NodeExists (i2, ViCLCreate) \/ NodeExists (i2, ViCLExpire) \/
+       NodeExists (i2, ViCLRequest) \/ NodeExists (i2, ViCLInvalidate)) =>
+      AddEdge ((i1, ViCLExpire), (i2, ViCLCreate), "NoDups", "orange") \/
+      AddEdge ((i2, ViCLExpire), (i1, ViCLCreate), "NoDups", "orange"))).
+
