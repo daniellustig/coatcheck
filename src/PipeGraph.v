@@ -35,7 +35,14 @@ Require Import PipeGraph.FOL.
 
 Import ListNotations.
 
-Extraction Language Ocaml.
+Require Extraction.
+(* this line is necessary for successful compilation when using      *)
+(*        The Coq Proof Assistant, version 8.8.1                     *)
+(*        OCaml version 4.07.0                                       *)
+(*        under Mac OS 10.12.6 (Sierra)                              *)
+(* added by Vashti Galpin, Vashti.Galpin@ed.ac.uk, 26 October 2018   *)
+
+Extraction Language OCaml.
 Extract Inductive bool => "bool" [ "true" "false" ].
 Extract Inductive list => "list" [ "[]" "(::)" ].
 Extract Inductive nat => int [ "0" "(fun x -> x + 1)" ]
